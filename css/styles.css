@@ -14,6 +14,10 @@ a {
   cursor: pointer;
 }
 
+hr{
+  margin-top: 5px;
+}
+
 :root {
   --bs-blue: #0d6efd;
   --bs-indigo: #6610f2;
