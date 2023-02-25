@@ -3,9 +3,10 @@
 https://education-it.github.io/todo/
 
 
-TODO:
--> Dodać elementy nad którymi skupić się w tym semestrze w kontekście rozwoju pod kątem inżynierki.
--> Rozpisać plan działania / nauki.
--> Określić priorytety!
--> Polepszyć wygląd sekcji MyPlan
--> Zmienić README
+
+*TODO*:
+1) Dodać elementy nad którymi skupić się w tym semestrze w kontekście rozwoju pod kątem inżynierki.
+2) Rozpisać plan działania / nauki.
+3) Określić priorytety!
+4) Polepszyć wygląd sekcji MyPlan
+5) Zmienić README
