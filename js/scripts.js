@@ -31,7 +31,7 @@ window.addEventListener('DOMContentLoaded', event => {
 function ChangeContent(name) {
     if(name === 'MyPlan'){
         var password = prompt("Enter password: ","");
-        if(password !== "Nie Bądź taki cwany gościu jeden >:) ale jak już musisz wiedzieć co tu jest to zapraszam <3 Zasłużyłeś." || password !== "$"){
+        if(password !== "$"){
             return;
         }
     }
