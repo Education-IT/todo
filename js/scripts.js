@@ -29,12 +29,7 @@ window.addEventListener('DOMContentLoaded', event => {
 });
 
 function ChangeContent(name) {
-    if(name === 'MyPlan'){
-        var password = prompt("Enter password: ","");
-        if(password !== "$"){
-            return;
-        }
-    }
+   
     var Category = document.getElementById("main-page");
     var Content = document.getElementById(name);
     
