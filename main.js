@@ -13,6 +13,11 @@ function main() {
     POINTER_Y = 1 - event.clientY/CANVAS.height;
   };
   CANVAS.addEventListener("mousemove", mouseMove, false);
+  SOURCEFLOW = 0;
+  CANVAS.addEventListener("mouseout", function() { SOURCEFLOW = 0; } , false);
+
+
+  CANVAS.addEventListener("mouseenter", function() { SOURCEFLOW = 4; } , false);
 
   // enable floating point precision textures:
   var EXT_FLOAT = GL.getExtension('OES_texture_float');
@@ -21,6 +26,9 @@ function main() {
 
   var SIMUSIZEPX = 512; // GPGPU simulation texture size in pixel
   var SIMUWIDTH = 2;    // Simulation size in meters
+  var GPGPU_NPASS = 6; // number of GPGPU pass per rendering
+  var WATER_DEPTH = 0.03;          // mean height of water in meters
+  var RENDERING_FLOOR_SIZE = 0.5; // size of the water floor texture in meters
 
   /*========================= RENDERING SHADERS ========================= */
   /*jshint multistr: true */
@@ -38,6 +46,9 @@ vUV = 0.5 * (position + vec2(1.));\n\
   var fragSrc_render = "\n\
 precision highp float;\n\
 \n\
+uniform float H; // water depth (meters)\n\
+uniform float L; // simulation size (meters)\n\
+uniform float l; // ground texture tile size (meters)\n\
 uniform sampler2D sampler;\n\
 uniform sampler2D sampler_normals;\n\
 \n\
@@ -95,13 +106,24 @@ gl_FragColor = vec4(h + d_h, uvSpeed + d_uvSpeed, 1.);\n\
   var fragSrc_copy = "\n\
 precision highp float;\n\
 \n\
+uniform float scale;\n\
 uniform sampler2D sampler;\n\
 \n\
 varying vec2 vUV;\n\
 \n\
 void main(void) {\n\
+float dxy = 1. / scale;\n\
 vec4 waterData = texture2D(sampler, vUV);\n\
-gl_FragColor = waterData;\n\
+vec4 waterDataAvg = (texture2D(sampler, vUV+vec2(dxy,0.))\n\
++.5*texture2D(sampler, vUV+vec2(dxy,dxy))\n\
++texture2D(sampler, vUV+vec2(0.,dxy))\n\
++.5*texture2D(sampler, vUV+vec2(-dxy,dxy))\n\
++texture2D(sampler, vUV+vec2(-dxy,0.))\n\
++.5*texture2D(sampler, vUV+vec2(-dxy,-dxy))\n\
++texture2D(sampler, vUV+vec2(0.,-dxy))\n\
++.5*texture2D(sampler, vUV+vec2(dxy,-dxy)))/6.;\n\
+\n\
+gl_FragColor = mix(waterData, waterDataAvg, 0.3);\n\
 }";
 
   /*================= NORMALS SHADERS ================== */
@@ -165,6 +187,9 @@ gl_FragColor = vec4(normal, height);\n\
   var SHP_RENDERING = compile_shaderProgram(vertSrc_render, fragSrc_render, "RENDER");
 
   SHP_VARS.rendering = {
+    H: GL.getUniformLocation(SHP_RENDERING, "H"),
+    L: GL.getUniformLocation(SHP_RENDERING, "L"),
+    l: GL.getUniformLocation(SHP_RENDERING, "l"),
     sampler: GL.getUniformLocation(SHP_RENDERING, "sampler"),
     sampler_normals: GL.getUniformLocation(SHP_RENDERING, "sampler_normals"),
     position: GL.getAttribLocation(SHP_RENDERING, "position")
@@ -192,6 +217,7 @@ gl_FragColor = vec4(normal, height);\n\
   var SHP_COPY = compile_shaderProgram(vertSrc_render, fragSrc_copy, "COPY");
 
   SHP_VARS.copy = {
+    scale: GL.getUniformLocation(SHP_COPY, "scale"),
     sampler: GL.getUniformLocation(SHP_COPY, "sampler"),
     position: GL.getAttribLocation(SHP_COPY, "position")
   };
@@ -228,8 +254,7 @@ gl_FragColor = vec4(normal, height);\n\
   /*========================= THE TEXTURE ========================= */
 
   var renderingImage = new Image();
-  renderingImage.src = 'ressources/canada.jpg';
-
+  renderingImage.src = 'ressources/waterFloor.jpg';
   var renderingTexture = GL.createTexture();
   GL.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, true);
   GL.bindTexture(GL.TEXTURE_2D, renderingTexture);
@@ -275,6 +300,9 @@ gl_FragColor = vec4(normal, height);\n\
   // SHADER PROGRAM RENDERING INIT:
   GL.useProgram(SHP_RENDERING);
   GL.enableVertexAttribArray(SHP_VARS.rendering.position);
+  GL.uniform1f(SHP_VARS.rendering.H, WATER_DEPTH);
+  GL.uniform1f(SHP_VARS.rendering.L, SIMUWIDTH);
+  GL.uniform1f(SHP_VARS.rendering.l, RENDERING_FLOOR_SIZE);
   GL.uniform1i(SHP_VARS.rendering.sampler, 0);
   GL.uniform1i(SHP_VARS.rendering.sampler_normals, 1);
   GL.bindBuffer(GL.ARRAY_BUFFER, QUAD_VERTEX);
@@ -289,14 +317,12 @@ gl_FragColor = vec4(normal, height);\n\
   GL.uniform1i(SHP_VARS.water.sampler_normals, 1);
 
   // WE SIMULATE A SQUARE WATER SURFACE SIDE MEASURING 2 METERS:
-
-  GL.uniform1f(SHP_VARS.water.g, -9.8);        // gravity acceleration
-  GL.uniform1f(SHP_VARS.water.H, 0.01);        // mean height of water in meters
-  GL.uniform1f(SHP_VARS.water.b, 0.1);         // viscous drag coefficient
+  GL.uniform1f(SHP_VARS.water.g, -9.8);       // gravity acceleration
+  GL.uniform1f(SHP_VARS.water.H, WATER_DEPTH);  // mean height of water in meters
+  GL.uniform1f(SHP_VARS.water.b, 0.001);       // viscous drag coefficient
   GL.uniform1f(SHP_VARS.water.epsilon, 1/SIMUSIZEPX); // used to compute space derivatives
   GL.uniform1f(SHP_VARS.water.scale, SIMUWIDTH/SIMUSIZEPX);
 
-  GL.uniform1f(SHP_VARS.water.sourceFlow, 4);
   GL.uniform1f(SHP_VARS.water.sourceRadius, 0.04); // percentage of the surface which is flowed by the source
 
   GL.enableVertexAttribArray(SHP_VARS.water.position);
@@ -308,6 +334,7 @@ gl_FragColor = vec4(normal, height);\n\
 
   // SHADER PROGRAM TEXTURE COPY INIT
   GL.useProgram(SHP_COPY);
+  GL.uniform1f(SHP_VARS.copy.scale, SIMUSIZEPX);
   GL.uniform1i(SHP_VARS.copy.sampler, 0);
   GL.enableVertexAttribArray(SHP_VARS.copy.position);
   GL.bindBuffer(GL.ARRAY_BUFFER, QUAD_VERTEX);
@@ -339,41 +366,50 @@ gl_FragColor = vec4(normal, height);\n\
     GL.bindFramebuffer(GL.FRAMEBUFFER, rtt_fb);
     GL.viewport(0, 0, SIMUSIZEPX, SIMUSIZEPX);
 
-    // COPY
-    GL.framebufferTexture2D(
-      GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, textures_waterPingPong[1], 0);
-    GL.useProgram(SHP_COPY);
-    GL.enableVertexAttribArray(SHP_VARS.copy.position);
-    GL.bindTexture(GL.TEXTURE_2D, textures_waterPingPong[0]);
-    GL.drawElements(GL.TRIANGLES, 6, GL.UNSIGNED_SHORT, 0);
-    GL.disableVertexAttribArray(SHP_VARS.copy.position);
-    textures_waterPingPong.reverse();
 
-    // GPGPU PHYSICAL SIMULATION:
-    GL.framebufferTexture2D(
-      GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, textures_waterPingPong[1], 0);
+    for (var i=0; i<GPGPU_NPASS; i++) {
 
-    GL.useProgram(SHP_WATER);
-    GL.enableVertexAttribArray(SHP_VARS.water.position);
-    GL.activeTexture(GL.TEXTURE1);
-    GL.bindTexture(GL.TEXTURE_2D, texture_normals);
-    GL.activeTexture(GL.TEXTURE0);
-    GL.bindTexture(GL.TEXTURE_2D, textures_waterPingPong[0]);
-    GL.uniform2f(SHP_VARS.water.mouse, POINTER_X, POINTER_Y);
-    GL.uniform1f(SHP_VARS.water.dt, dt);
-    GL.drawElements(GL.TRIANGLES, 6, GL.UNSIGNED_SHORT, 0);
-    GL.disableVertexAttribArray(SHP_VARS.water.position);
+      // COPY
+      GL.framebufferTexture2D(
+        GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, textures_waterPingPong[1], 0);
+      GL.useProgram(SHP_COPY);
+      GL.enableVertexAttribArray(SHP_VARS.copy.position);
+      GL.bindTexture(GL.TEXTURE_2D, textures_waterPingPong[0]);
+      GL.drawElements(GL.TRIANGLES, 6, GL.UNSIGNED_SHORT, 0);
+      GL.disableVertexAttribArray(SHP_VARS.copy.position);
+      textures_waterPingPong.reverse();
 
-    textures_waterPingPong.reverse();
+      // GPGPU PHYSICAL SIMULATION:
+      GL.framebufferTexture2D(
+        GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, textures_waterPingPong[1], 0);
 
-    // NORMALS:
-    GL.framebufferTexture2D(
-      GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture_normals, 0);
-    GL.useProgram(SHP_NORMALS);
-    GL.enableVertexAttribArray(SHP_VARS.normals.position);
-    GL.bindTexture(GL.TEXTURE_2D, textures_waterPingPong[0]);
-    GL.drawElements(GL.TRIANGLES, 6, GL.UNSIGNED_SHORT, 0);
-    GL.disableVertexAttribArray(SHP_VARS.normals.position);
+      GL.useProgram(SHP_WATER);
+      GL.enableVertexAttribArray(SHP_VARS.water.position);
+      GL.activeTexture(GL.TEXTURE1);
+      GL.bindTexture(GL.TEXTURE_2D, texture_normals);
+      GL.activeTexture(GL.TEXTURE0);
+      GL.bindTexture(GL.TEXTURE_2D, textures_waterPingPong[0]);
+      if (!i) {
+        GL.uniform2f(SHP_VARS.water.mouse, POINTER_X, POINTER_Y);
+        GL.uniform1f(SHP_VARS.water.sourceFlow, SOURCEFLOW);
+        GL.uniform1f(SHP_VARS.water.dt, dt/GPGPU_NPASS);
+      }
+      GL.drawElements(GL.TRIANGLES, 6, GL.UNSIGNED_SHORT, 0);
+      GL.disableVertexAttribArray(SHP_VARS.water.position);
+
+      textures_waterPingPong.reverse();
+
+      // NORMALS:
+      GL.framebufferTexture2D(
+        GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture_normals, 0);
+      GL.useProgram(SHP_NORMALS);
+      GL.enableVertexAttribArray(SHP_VARS.normals.position);
+      GL.bindTexture(GL.TEXTURE_2D, textures_waterPingPong[0]);
+      GL.drawElements(GL.TRIANGLES, 6, GL.UNSIGNED_SHORT, 0);
+      GL.disableVertexAttribArray(SHP_VARS.normals.position);
+
+    } // end for GPGPU_NPASS
+
 
     // RENDERING:
     GL.bindFramebuffer(GL.FRAMEBUFFER, null);
