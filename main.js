@@ -254,7 +254,7 @@ gl_FragColor = vec4(normal, height);\n\
   /*========================= THE TEXTURE ========================= */
 
   var renderingImage = new Image();
-  renderingImage.src = 'ressources/waterFloor.jpg';
+  renderingImage.src = 'waterFloor.jpg';
   var renderingTexture = GL.createTexture();
   GL.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, true);
   GL.bindTexture(GL.TEXTURE_2D, renderingTexture);
